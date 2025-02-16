@@ -42,7 +42,8 @@ namespace Jube.App.Controllers.Authentication
         {
             this.dynamicEnvironment = dynamicEnvironment;
             dbContext =
-                DataConnectionDbContext.GetDbContextDataConnection(this.dynamicEnvironment.AppSettings("ConnectionString"));
+                DataConnectionDbContext.GetDbContextDataConnection(
+                    this.dynamicEnvironment.AppSettings("ConnectionString"));
             this.contextAccessor = contextAccessor;
             service = new Service.Authentication.Authentication(dbContext);
         }
@@ -60,12 +61,12 @@ namespace Jube.App.Controllers.Authentication
 
         [HttpPost("ByUserNamePassword")]
         [ProducesResponseType(typeof(AuthenticationResponseDto), (int)HttpStatusCode.OK)]
-        public ActionResult<AuthenticationResponseDto> ExhaustiveSearchInstance(
+        public ActionResult<AuthenticationResponseDto> ByUserNamePassword(
             [FromBody] AuthenticationRequestDto model)
         {
             var validator = new AuthenticationRequestDtoValidator();
             var results = validator.Validate(model);
-            if (!results.IsValid) return BadRequest();
+            if (!results.IsValid) return BadRequest(results);
 
             try
             {
@@ -119,29 +120,29 @@ namespace Jube.App.Controllers.Authentication
             return authenticationDto;
         }
 
-        [Authorize]
+        [AllowAnonymous]
         [HttpPost("ChangePassword")]
         [ProducesResponseType(typeof(AuthenticationResponseDto), (int)HttpStatusCode.OK)]
         public ActionResult ChangePassword([FromBody] ChangePasswordRequestDto model)
         {
             if (User.Identity == null) return Ok();
-            
+
             var validator = new ChangePasswordRequestDtoValidator();
 
             var results = validator.Validate(model);
 
-            if (!results.IsValid) return BadRequest();
+            if (!results.IsValid) return BadRequest(results);
 
             try
             {
                 service.ChangePassword(User.Identity.Name, model,
-                    dynamicEnvironment.AppSettings("PasswordHashingKey")); 
+                    dynamicEnvironment.AppSettings("PasswordHashingKey"));
             }
             catch (BadCredentialsException)
             {
                 return Unauthorized();
             }
-            
+
             return Ok();
         }
     }

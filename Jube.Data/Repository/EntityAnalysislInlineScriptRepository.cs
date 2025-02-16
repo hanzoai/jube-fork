@@ -11,24 +11,26 @@
  * see <https://www.gnu.org/licenses/>.
  */
 
+using System;
 using System.Collections.Generic;
 using Jube.Data.Context;
 using Jube.Data.Poco;
+using LinqToDB;
 
 namespace Jube.Data.Repository
 {
-    public class EntityAnalysisInlineScriptRepository
+    public class EntityAnalysisInlineScriptRepository(DbContext dbContext)
     {
-        private readonly DbContext _dbContext;
-
-        public EntityAnalysisInlineScriptRepository(DbContext dbContext)
-        {
-            _dbContext = dbContext;
-        }
-
         public IEnumerable<EntityAnalysisInlineScript> Get()
         {
-            return _dbContext.EntityAnalysisInlineScript;
+            return dbContext.EntityAnalysisInlineScript;
+        }
+        
+        public EntityAnalysisInlineScript Insert(EntityAnalysisInlineScript model)
+        {
+            model.CreatedDate = DateTime.Now;
+            model.Id = dbContext.InsertWithInt32Identity(model);
+            return model;
         }
     }
 }
