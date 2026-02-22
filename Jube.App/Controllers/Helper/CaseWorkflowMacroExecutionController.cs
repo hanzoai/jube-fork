@@ -13,19 +13,23 @@
 
 namespace Jube.App.Controllers.Helper
 {
-    using System.Collections.Generic;
     using System.Threading;
     using System.Threading.Tasks;
     using Case;
     using Code;
     using Data.Context;
+    using Data.Poco;
     using Data.Repository;
     using Dto;
     using DynamicEnvironment;
+    using Engine.EntityAnalysisModelInvoke.Models.Payload.EntityAnalysisModelInstanceEntryPayload;
+    using Engine.EntityAnalysisModelInvoke.Models.Payload.EntityAnalysisModelInstanceEntryPayload.Extensions;
+    using Engine.Helpers;
     using log4net;
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Http;
     using Microsoft.AspNetCore.Mvc;
+    using Newtonsoft.Json;
     using Newtonsoft.Json.Linq;
 
     [Route("api/[controller]")]
@@ -35,24 +39,34 @@ namespace Jube.App.Controllers.Helper
     {
         private readonly DbContext dbContext;
         private readonly DynamicEnvironment dynamicEnvironment;
+        private readonly JsonSerializationHelper jsonSerializationHelper;
         private readonly ILog log;
         private readonly PermissionValidation permissionValidation;
+        private readonly CaseRepository repositoryCase;
+        private readonly CaseWorkflowMacroRepository repositoryCaseWorkflowMacro;
+        private readonly CaseWorkflowStatusRepository repositoryCaseWorkflowStatus;
         private readonly string userName;
 
         public CaseWorkflowMacroExecutionController(ILog log,
-            DynamicEnvironment dynamicEnvironment, IHttpContextAccessor httpContextAccessor)
+            DynamicEnvironment dynamicEnvironment, IHttpContextAccessor httpContextAccessor, JsonSerializationHelper jsonSerializationHelper)
         {
             if (httpContextAccessor.HttpContext?.User.Identity != null)
             {
                 userName = httpContextAccessor.HttpContext.User.Identity.Name;
             }
 
+            dbContext =
+                DataConnectionDbContext.GetDbContextDataConnection(dynamicEnvironment.AppSettings("ConnectionString"));
+
             this.log = log;
             this.dynamicEnvironment = dynamicEnvironment;
 
-            dbContext =
-                DataConnectionDbContext.GetDbContextDataConnection(this.dynamicEnvironment.AppSettings("ConnectionString"));
+            repositoryCase = new CaseRepository(dbContext, userName);
+            repositoryCaseWorkflowMacro = new CaseWorkflowMacroRepository(dbContext, userName);
+            repositoryCaseWorkflowStatus = new CaseWorkflowStatusRepository(dbContext, userName);
+
             permissionValidation = new PermissionValidation(dbContext, userName);
+            this.jsonSerializationHelper = jsonSerializationHelper;
         }
 
         protected override void Dispose(bool disposing)
@@ -77,53 +91,74 @@ namespace Jube.App.Controllers.Helper
                 return Forbid();
             }
 
-            if (model.Payload == null)
+            var existingCase = await repositoryCase.GetByIdActiveOnlyAsync(model.CaseId, token);
+
+            if (existingCase == null)
             {
-                return Ok(model);
+                return BadRequest();
             }
 
-            var jObject = JObject.Parse(model.Payload);
+            var caseWorkflowMacro = await repositoryCaseWorkflowMacro.GetByIdActiveOnlyAsync(model.CaseWorkflowMacroId, token);
 
-            var values = new Dictionary<string, string>();
-            foreach (var (key, value) in jObject)
+            if (caseWorkflowMacro == null)
             {
-                if (value != null)
-                {
-                    values.Add(key, value.ToString());
-                }
+                return BadRequest();
             }
 
-            var caseWorkflowMacroRepository = new CaseWorkflowMacroRepository(dbContext, userName);
+            var caseWorkflowStatus = await repositoryCaseWorkflowStatus.GetByGuidAsync(existingCase.CaseWorkflowStatusGuid, token);
 
-            var caseWorkflowMacro = await caseWorkflowMacroRepository.GetByIdActiveOnlyAsync(model.CaseWorkflowMacroId, token);
-
-            if (caseWorkflowMacro.EnableNotification != 1 && caseWorkflowMacro.EnableHttpEndpoint != 1)
+            if (caseWorkflowStatus == null)
             {
-                return Ok(model);
+                return BadRequest();
             }
+
+            var context = JsonConvert.DeserializeObject<EntityAnalysisModelInstanceEntryPayload>(existingCase.Json, jsonSerializationHelper.DefaultJsonSerializerSettingsSettings);
 
             if (caseWorkflowMacro.EnableNotification == 1)
             {
                 var notification = new Notification(log, dynamicEnvironment);
+                var notificationSubject = context.ReplaceTokens(caseWorkflowMacro.NotificationSubject);
+                var notificationDestination = context.ReplaceTokens(caseWorkflowMacro.NotificationDestination);
+                var notificationBody = context.ReplaceTokens(caseWorkflowMacro.NotificationBody);
+
                 await notification.SendAsync(caseWorkflowMacro.NotificationTypeId ?? 1,
-                    caseWorkflowMacro.NotificationDestination,
-                    caseWorkflowMacro.NotificationSubject,
-                    caseWorkflowMacro.NotificationBody, values, token);
+                    notificationDestination,
+                    notificationSubject,
+                    notificationBody, token);
             }
 
-            if (caseWorkflowMacro.EnableHttpEndpoint != 1)
+            if (caseWorkflowMacro.EnableHttpEndpoint == 1)
             {
-                return Ok(model);
-            }
+                var endpoint = context.ReplaceTokens(caseWorkflowMacro.HttpEndpoint);
 
-            if (caseWorkflowMacro.HttpEndpointTypeId != null)
-            {
-                await SendHttpEndpoint.SendAsync(caseWorkflowMacro.HttpEndpoint,
-                    caseWorkflowMacro.HttpEndpointTypeId.Value
-                    , values);
+                if (caseWorkflowMacro.HttpEndpointTypeId == 1)
+                {
+                    await SendHttpEndpoint.PostAsync(endpoint, PreparePostBodyString(model, existingCase, context, caseWorkflowStatus, caseWorkflowMacro), log);
+                }
+                else
+                {
+                    await SendHttpEndpoint.GetAsync(endpoint, log);
+                }
             }
 
             return Ok(model);
+        }
+
+        private string PreparePostBodyString(CaseWorkflowMacroExecutionDto model, Case existingCase, EntityAnalysisModelInstanceEntryPayload payload, CaseWorkflowStatus caseWorkflowStatus, CaseWorkflowMacro caseWorkflowMacro)
+        {
+            var jObject = JObject.FromObject(model, jsonSerializationHelper.ArchiveJsonSerializer);
+            jObject["caseWorkflowMacroName"] = caseWorkflowMacro.Name;
+
+            var caseJObject = JObject.FromObject(existingCase, jsonSerializationHelper.ArchiveJsonSerializer);
+            caseJObject.Remove("json");
+            jObject["case"] = caseJObject;
+
+            caseJObject["caseWorkflowStatus"] = caseWorkflowStatus.Name;
+
+            var payloadJObject = JObject.FromObject(payload, jsonSerializationHelper.ArchiveJsonSerializer);
+            caseJObject["payload"] = payloadJObject;
+
+            return jObject.ToString();
         }
     }
 }
