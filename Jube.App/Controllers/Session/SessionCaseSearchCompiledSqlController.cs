@@ -33,6 +33,7 @@ namespace Jube.App.Controllers.Session
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Http;
     using Microsoft.AspNetCore.Mvc;
+    using Microsoft.Extensions.Logging.Abstractions;
     using Newtonsoft.Json;
     using Validators;
 
@@ -67,7 +68,7 @@ namespace Jube.App.Controllers.Session
             {
                 cfg.CreateMap<SessionCaseSearchCompiledSql, SessionCaseSearchCompiledSqlDto>();
                 cfg.CreateMap<SessionCaseSearchCompiledSqlDto, SessionCaseSearchCompiledSql>();
-            });
+            }, NullLoggerFactory.Instance);
 
             mapper = new Mapper(config);
 
@@ -108,7 +109,7 @@ namespace Jube.App.Controllers.Session
 
                 await CheckRebuildAsync(modelCompiled, token).ConfigureAwait(false);
 
-                var postgres = new Postgres(reportConnectionString, log);
+                using var postgres = new Postgres(reportConnectionString, log);
                 var tokens = JsonConvert.DeserializeObject<List<object>>(modelCompiled.FilterTokens);
 
                 var sw = new StopWatch();
