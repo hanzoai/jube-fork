@@ -22,6 +22,7 @@ namespace Jube.Data.Repository
     using Context;
     using LinqToDB;
     using log4net;
+    using Microsoft.Extensions.Logging.Abstractions;
     using Poco;
     using Reporting;
     using Validation;
@@ -215,7 +216,7 @@ namespace Jube.Data.Repository
             var mapper = new Mapper(new MapperConfiguration(cfg =>
             {
                 cfg.CreateMap<VisualisationRegistryDatasource, VisualisationRegistryDatasourceVersion>();
-            }));
+            }, NullLoggerFactory.Instance));
 
             var audit = mapper.Map<VisualisationRegistryDatasourceVersion>(existing);
             audit.VisualisationRegistryDatasourceId = existing.Id;
@@ -298,7 +299,7 @@ namespace Jube.Data.Repository
                 parametersDefaultValues.Add(parameter.Name.Replace(" ", "_"), defaultValue);
             }
 
-            var postgres = new Postgres(dbContext.ConnectionString, log);
+            using var postgres = new Postgres(dbContext.ConnectionString, log);
             return await postgres.IntrospectAsync(sql, parametersDefaultValues).ConfigureAwait(false);
         }
 
