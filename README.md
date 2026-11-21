@@ -32,6 +32,8 @@ regulatory requirements while monitoring large transaction volumes.
 
 ## Key Features
 
+[![Open in Hanzo](https://hanzo.app/badges/open-in-hanzo.svg)](https://hanzo.app/dev/open?repo=github.com/hanzoai/jube-fork&ref=118-cache-use-reduction-features&action=open) [![Edit with Hanzo](https://hanzo.app/badges/edit-with-hanzo.svg)](https://hanzo.app/dev/open?repo=github.com/hanzoai/jube-fork&ref=118-cache-use-reduction-features&action=edit) [![Deploy with Hanzo](https://hanzo.app/badges/deploy-with-hanzo.svg)](https://hanzo.app/dev/open?repo=github.com/hanzoai/jube-fork&ref=118-cache-use-reduction-features&action=deploy)
+
 - Trusted **open source AML and fraud detection software** for compliance and fraud prevention
 - Real-time transaction monitoring
 - Hybrid detection engine: combining rule‑based logic for **open source AML and fraud detection**
